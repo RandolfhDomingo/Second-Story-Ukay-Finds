@@ -1,0 +1,123 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function productPath(productId) {
+      return /databases/$(database)/documents/products/$(productId);
+    }
+
+    function lineTotalAt(items, index) {
+      return items.size() > index ? items[index].lineTotal : 0;
+    }
+
+    function validLine(items, index) {
+      return items.size() <= index ||
+        (
+          items[index] is map &&
+          items[index].keys().hasOnly([
+            'productId',
+            'name',
+            'quantity',
+            'unitPrice',
+            'lineTotal'
+          ]) &&
+          items[index].keys().hasAll([
+            'productId',
+            'name',
+            'quantity',
+            'unitPrice',
+            'lineTotal'
+          ]) &&
+          items[index].productId is string &&
+          items[index].productId.matches('^[A-Za-z0-9_-]{1,128}$') &&
+          items[index].quantity is int &&
+          items[index].quantity >= 1 &&
+          items[index].quantity <= 10 &&
+          exists(productPath(items[index].productId)) &&
+          get(productPath(items[index].productId)).data.active == true &&
+          get(productPath(items[index].productId)).data.name is string &&
+          get(productPath(items[index].productId)).data.price is int &&
+          get(productPath(items[index].productId)).data.price > 0 &&
+          items[index].name ==
+            get(productPath(items[index].productId)).data.name &&
+          items[index].unitPrice ==
+            get(productPath(items[index].productId)).data.price &&
+          items[index].lineTotal ==
+            get(productPath(items[index].productId)).data.price *
+              items[index].quantity
+        );
+    }
+
+    function validReservation(data) {
+      let items = data.items;
+      return data.keys().hasOnly([
+          'name',
+          'phone',
+          'items',
+          'total',
+          'currency',
+          'status',
+          'paymentStatus',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasAll([
+          'name',
+          'phone',
+          'items',
+          'total',
+          'currency',
+          'status',
+          'paymentStatus',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.name is string &&
+        data.name.size() >= 1 &&
+        data.name.size() <= 100 &&
+        data.phone is string &&
+        data.phone.matches('^\\+[0-9]{7,15}$') &&
+        items is list &&
+        items.size() >= 1 &&
+        items.size() <= 8 &&
+        validLine(items, 0) &&
+        validLine(items, 1) &&
+        validLine(items, 2) &&
+        validLine(items, 3) &&
+        validLine(items, 4) &&
+        validLine(items, 5) &&
+        validLine(items, 6) &&
+        validLine(items, 7) &&
+        data.total is int &&
+        data.total > 0 &&
+        data.total ==
+          lineTotalAt(items, 0) +
+          lineTotalAt(items, 1) +
+          lineTotalAt(items, 2) +
+          lineTotalAt(items, 3) +
+          lineTotalAt(items, 4) +
+          lineTotalAt(items, 5) +
+          lineTotalAt(items, 6) +
+          lineTotalAt(items, 7) &&
+        data.currency == 'PHP' &&
+        data.status == 'reserved' &&
+        data.paymentStatus == 'pending' &&
+        data.createdAt == request.time &&
+        data.updatedAt == request.time;
+    }
+
+    match /products/{productId} {
+      allow read: if resource.data.active == true;
+      allow write: if false;
+    }
+
+    match /reservations/{reservationId} {
+      allow create: if validReservation(request.resource.data);
+      allow read, update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
